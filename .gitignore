@@ -1,0 +1,12 @@
+# Terraform state — contains resource IDs and may contain sensitive data
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+.terraform.lock.hcl
+
+# Variable overrides — may contain your IP address
+*.tfvars
+
+# OS files
+.DS_Store
+Thumbs.db
