@@ -240,3 +240,35 @@ cloud-project/
 
 **`terraform destroy` fails partway through**
 → Run it again — Terraform is safe to re-run and will pick up where it left off.
+
+
+## Phase 2 — Cloud Governance
+
+The following monitoring and alerting resources are deployed on top of the Phase 1 infrastructure:
+
+| Resource | Name | Description |
+|----------|------|-------------|
+| SNS Topic | project-alerts | Notification channel for alarms |
+| SNS Subscription | email | Delivers alerts to your email address |
+| CloudWatch Alarm | project-cpu-high-web-1 | Triggers when web-server-1 CPU > 70% for 2 minutes |
+| CloudWatch Alarm | project-cpu-high-web-2 | Triggers when web-server-2 CPU > 70% for 2 minutes |
+| CloudWatch Dashboard | project-dashboard | Monitors CPU, ALB traffic, healthy hosts, and network |
+
+### Setting your alert email
+
+Before running `terraform apply`, set your email in `terraform.tfvars`:
+
+```hcl
+alert_email = "your-email@example.com"
+```
+
+After apply, check your email and **click the confirmation link** from AWS —
+you will not receive alarm notifications until you confirm.
+
+### Viewing the dashboard
+
+The dashboard URL is printed after `terraform apply`:
+
+### Viewing the alarms
+
+Click back on CloudWatch -> Alarms and you will see the two CPU alarms
