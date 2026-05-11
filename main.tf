@@ -377,3 +377,205 @@ output "instance_public_ips" {
   description = "Public IPs of EC2 instances"
   value       = aws_instance.web[*].public_ip
 }
+
+# =============================================================================
+# Phase 2 — Cloud Governance
+# CloudWatch dashboard, alarms, and SNS email notifications
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Variable — alert email
+# -----------------------------------------------------------------------------
+
+variable "alert_email" {
+  description = "Email address to receive CloudWatch alarm notifications"
+  type        = string
+  default     = "panagiotisarvanitakis@gmail.com"
+}
+
+# -----------------------------------------------------------------------------
+# SNS Topic + Email Subscription
+# After terraform apply, check your email and confirm the subscription —
+# you will not receive alerts until you click the confirmation link.
+# -----------------------------------------------------------------------------
+
+resource "aws_sns_topic" "alerts" {
+  name = "${var.project_name}-alerts"
+
+  tags = {
+    Name    = "${var.project_name}-alerts"
+    Project = var.project_name
+  }
+}
+
+resource "aws_sns_topic_subscription" "email" {
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+# -----------------------------------------------------------------------------
+# CloudWatch Alarms — CPU utilisation per EC2 instance
+# Triggers when CPU exceeds 70% for two consecutive 1-minute periods.
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudwatch_metric_alarm" "cpu_high" {
+  count = 2
+
+  alarm_name          = "${var.project_name}-cpu-high-web-${count.index + 1}"
+  alarm_description   = "CPU utilisation above 70% on web-server-${count.index + 1}"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 70
+
+  dimensions = {
+    InstanceId = aws_instance.web[count.index].id
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+
+  tags = {
+    Name    = "${var.project_name}-cpu-alarm-${count.index + 1}"
+    Project = var.project_name
+  }
+}
+
+# -----------------------------------------------------------------------------
+# CloudWatch Dashboard
+# Displays EC2 CPU, ALB request count, healthy host count, and network traffic.
+# View it in: AWS Console → CloudWatch → Dashboards → project-dashboard
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudwatch_dashboard" "main" {
+  dashboard_name = "${var.project_name}-dashboard"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "text"
+        x      = 0
+        y      = 0
+        width  = 24
+        height = 1
+        properties = {
+          markdown = "## Cloud Project — Phase 2 Monitoring Dashboard"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 1
+        width  = 12
+        height = 6
+        properties = {
+          title  = "EC2 CPU Utilisation — Web Server 1"
+          view   = "timeSeries"
+          region = var.aws_region
+          metrics = [
+            ["AWS/EC2", "CPUUtilization", "InstanceId", aws_instance.web[0].id,
+            { label = "Web Server 1 CPU", color = "#2E75B6" }]
+          ]
+          yAxis = { left = { min = 0, max = 100 } }
+          annotations = {
+            horizontal = [{ value = 70, label = "Alarm threshold (70%)", color = "#d62728" }]
+          }
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 1
+        width  = 12
+        height = 6
+        properties = {
+          title  = "EC2 CPU Utilisation — Web Server 2"
+          view   = "timeSeries"
+          region = var.aws_region
+          metrics = [
+            ["AWS/EC2", "CPUUtilization", "InstanceId", aws_instance.web[1].id,
+            { label = "Web Server 2 CPU", color = "#1F9E75" }]
+          ]
+          yAxis = { left = { min = 0, max = 100 } }
+          annotations = {
+            horizontal = [{ value = 70, label = "Alarm threshold (70%)", color = "#d62728" }]
+          }
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 7
+        width  = 8
+        height = 6
+        properties = {
+          title  = "ALB — Request Count"
+          view   = "timeSeries"
+          region = var.aws_region
+          metrics = [
+            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", aws_lb.main.arn_suffix,
+            { label = "Total Requests", stat = "Sum", color = "#9467bd" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 8
+        y      = 7
+        width  = 8
+        height = 6
+        properties = {
+          title  = "ALB — Healthy Host Count"
+          view   = "timeSeries"
+          region = var.aws_region
+          metrics = [
+            ["AWS/ApplicationELB", "HealthyHostCount",
+              "TargetGroup", aws_lb_target_group.web.arn_suffix,
+              "LoadBalancer", aws_lb.main.arn_suffix,
+            { label = "Healthy Hosts", stat = "Average", color = "#2ca02c" }]
+          ]
+          yAxis = { left = { min = 0, max = 3 } }
+          annotations = {
+            horizontal = [{ value = 2, label = "Expected (2 healthy)", color = "#2ca02c" }]
+          }
+        }
+      },
+      {
+        type   = "metric"
+        x      = 16
+        y      = 7
+        width  = 8
+        height = 6
+        properties = {
+          title  = "EC2 Network Traffic (Both Instances)"
+          view   = "timeSeries"
+          region = var.aws_region
+          metrics = [
+            ["AWS/EC2", "NetworkIn", "InstanceId", aws_instance.web[0].id, { label = "WS1 In", color = "#2E75B6" }],
+            ["AWS/EC2", "NetworkOut", "InstanceId", aws_instance.web[0].id, { label = "WS1 Out", color = "#aec7e8" }],
+            ["AWS/EC2", "NetworkIn", "InstanceId", aws_instance.web[1].id, { label = "WS2 In", color = "#1F9E75" }],
+            ["AWS/EC2", "NetworkOut", "InstanceId", aws_instance.web[1].id, { label = "WS2 Out", color = "#98df8a" }]
+          ]
+        }
+      }
+    ]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# Additional outputs for Phase 2
+# -----------------------------------------------------------------------------
+
+output "cloudwatch_dashboard_url" {
+  description = "Direct link to the CloudWatch dashboard in the AWS Console"
+  value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${var.project_name}-dashboard"
+}
+
+output "sns_topic_arn" {
+  description = "SNS topic ARN — alarm notifications are sent here"
+  value       = aws_sns_topic.alerts.arn
+}
