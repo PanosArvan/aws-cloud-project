@@ -268,6 +268,7 @@ you will not receive alarm notifications until you confirm.
 ### Viewing the dashboard
 
 The dashboard URL is printed after `terraform apply`:
+cloudwatch_dashboard_url = "https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=project-dashboard"
 
 ### Viewing the alarms
 
